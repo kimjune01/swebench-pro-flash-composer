@@ -1,0 +1,9 @@
+# operator-side credentials (in env or keychain, never in repo)
+*.key
+*.pem
+.env
+.envrc
+
+# run-time scratch
+runs/scratch/
+/tmp-*/
