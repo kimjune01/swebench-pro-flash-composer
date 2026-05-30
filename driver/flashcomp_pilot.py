@@ -51,17 +51,49 @@ MAX_OUTER = int(os.environ.get("MAX_OUTER", "5"))   # outer-loop budget (matches
 PLATFORM  = os.environ.get("PLATFORM", "linux/amd64")  # amd64 emulation on Mac (OrbStack)
 WORKSPACE = "/workspace"
 
+# REMOTE_BOX=user@host:pem_path — when set, all docker commands run on EC2 via SSH.
+# cursor-agent + flash() remain local; only the container lifecycle is remote.
+_REMOTE_BOX = os.environ.get("REMOTE_BOX", "")  # e.g. "ec2-user@1.2.3.4:/tmp/sweb-coord1-xyz.pem"
+
+
+def _parse_remote_box():
+    """Parse REMOTE_BOX=user@host:pem_path → (user_at_host, pem_path) or (None, None)."""
+    if not _REMOTE_BOX:
+        return None, None
+    colon = _REMOTE_BOX.rfind(":")
+    if colon < 0:
+        return _REMOTE_BOX, None
+    return _REMOTE_BOX[:colon], _REMOTE_BOX[colon + 1:]
+
+
+_SSH_HOST, _SSH_PEM = _parse_remote_box()
+_SSH_BASE = (["ssh", "-i", _SSH_PEM,
+               "-o", "StrictHostKeyChecking=no",
+               "-o", "ConnectTimeout=15",
+               _SSH_HOST]
+             if _SSH_HOST else None)
+
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _docker_ize(cmd):
     """Add --platform to docker pull/run so amd64 eval images run under emulation.
-    Mirrors swebench-pro's rung5_driver._localize() for the local-dev path."""
+    Mirrors swebench-pro's rung5_driver._localize() for the local-dev path.
+    Only used on the local (non-REMOTE_BOX) path — EC2 is native x86_64."""
     cmd = cmd.replace("docker run -d ", f"docker run -d --platform {PLATFORM} ")
     cmd = cmd.replace("docker pull ",   f"docker pull --platform {PLATFORM} ")
     return cmd
 
 def run(cmd, timeout=600, inp=None):
+    """Run a shell command, routing docker to EC2 via SSH when REMOTE_BOX is set.
+
+    REMOTE_BOX path: sends the raw cmd to the EC2 host over SSH (no _docker_ize —
+    EC2 is native x86_64). stdin piping works the same way (input= passes through).
+    Local path: wraps in bash -c after injecting --platform flags for OrbStack emulation.
+    """
+    if _SSH_BASE:
+        return subprocess.run(_SSH_BASE + [cmd],
+                              capture_output=True, text=True, timeout=timeout, input=inp)
     return subprocess.run(["bash", "-c", _docker_ize(cmd)],
                           capture_output=True, text=True, timeout=timeout, input=inp)
 
@@ -160,7 +192,12 @@ def pro_setup(inst):
 def install_gate(inst, cid, root):
     """Install /tmp/gate-fc-<tag> and /tmp/box-fc-<tag> helpers (matches pro_pilot.py).
     bash -c, NOT -lc: a login shell resets PATH and hides baked toolchains (regression #1
-    from swebench-pro's PROCEDURE.md §4a harness fault list)."""
+    from swebench-pro's PROCEDURE.md §4a harness fault list).
+
+    Scripts live on the Mac so cursor-agent (which runs locally) can call them as
+    `bash {gate}` / `bash {box} '<cmd>'`.  When REMOTE_BOX is set, they emit SSH
+    commands to reach the container on EC2 instead of talking to a local docker daemon.
+    """
     files   = ",".join(inst["selected_test_files"])
     summary = (
         "import json;o=json.load(open('/workspace/output.json'));"
@@ -181,11 +218,37 @@ def install_gate(inst, cid, root):
     run_id = f"{inst['instance_id'].replace('/', '_')}-{os.getpid()}"
     gate = f"/tmp/gate-fc-{run_id}"
     box  = f"/tmp/box-fc-{run_id}"
-    pathlib.Path(gate).write_text(
-        f"#!/bin/bash\ndocker exec {cid} bash -c {shlex.quote(g)} 2>&1 | tail -150\n")
-    bx = (f"printf '%s' \"$*\" | docker exec -i {cid} bash -c 'cat >/tmp/_bc' && "
-          f"docker exec {cid} bash -c 'cd {root} && bash /tmp/_bc'")
-    pathlib.Path(box).write_text(f"#!/bin/bash\n{bx}\n")
+
+    if _SSH_BASE:
+        # ── REMOTE_BOX path: gate/box scripts SSH to EC2 ─────────────────────
+        # Scripts are bash files executed locally via `bash {gate}` / `bash {box} '<cmd>'`.
+        # SSH receives its remote command as a single quoted shell word; shlex.quote
+        # wraps each remote command so the local bash passes it verbatim to ssh(1),
+        # which then hands it to the remote shell.
+        ssh_prefix = (f"ssh -i {shlex.quote(_SSH_PEM)} "
+                      f"-o StrictHostKeyChecking=no -o ConnectTimeout=15 "
+                      f"{shlex.quote(_SSH_HOST)}")
+        # gate: remote command is `docker exec CID bash -c '<g>'`
+        remote_gate_cmd = f"docker exec {cid} bash -c {shlex.quote(g)} 2>&1 | tail -150"
+        pathlib.Path(gate).write_text(
+            f"#!/bin/bash\n"
+            f"{ssh_prefix} {shlex.quote(remote_gate_cmd)}\n")
+        # box: two-step pipe — push stdin into /tmp/_bc, then exec it
+        # Step 1 uses `ssh ... cmd` with stdin piped from `printf`; step 2 is a
+        # second SSH for the exec (no stdin needed).
+        remote_put  = f"docker exec -i {cid} bash -c 'cat>/tmp/_bc'"
+        remote_exec = f"docker exec {cid} bash -c 'cd {root} && bash /tmp/_bc'"
+        bx = (f"printf '%s' \"$*\" | {ssh_prefix} {shlex.quote(remote_put)} && "
+              f"{ssh_prefix} {shlex.quote(remote_exec)}")
+        pathlib.Path(box).write_text(f"#!/bin/bash\n{bx}\n")
+    else:
+        # ── Local path: gate/box scripts talk to local docker daemon ─────────
+        pathlib.Path(gate).write_text(
+            f"#!/bin/bash\ndocker exec {cid} bash -c {shlex.quote(g)} 2>&1 | tail -150\n")
+        bx = (f"printf '%s' \"$*\" | docker exec -i {cid} bash -c 'cat >/tmp/_bc' && "
+              f"docker exec {cid} bash -c 'cd {root} && bash /tmp/_bc'")
+        pathlib.Path(box).write_text(f"#!/bin/bash\n{bx}\n")
+
     subprocess.run(["chmod", "+x", gate, box])
     return box, gate
 
