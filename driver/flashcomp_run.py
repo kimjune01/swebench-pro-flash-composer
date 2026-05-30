@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""flash_run.py — whole-set driver for the §4.5a ablation run.
+"""flashcomp_run.py — whole-set driver for the §4.5a ablation run.
 
 Deterministic stripe of runs/audit/run_order.txt across N parallel shards.
 Resume is automatic: instances already in any ledger shard are skipped.
 Tag rotation (artifact change) → delete or archive all run.*.jsonl and restart.
 
-  driver/flash_run.py [--shard i/N] [--limit N] [--only ID ...]
-  driver/flash_run.py --shard 1/4   # shard 1 of 4 (Mac process 1)
-  driver/flash_run.py --shard 2/4   # shard 2 of 4 (Mac process 2)
+  driver/flashcomp_run.py [--shard i/N] [--limit N] [--only ID ...]
+  driver/flashcomp_run.py --shard 1/4   # shard 1 of 4 (Mac process 1)
+  driver/flashcomp_run.py --shard 2/4   # shard 2 of 4 (Mac process 2)
 
 Multi-shard: run N of these in parallel. Each writes to its own shard ledger
 (runs/scored/run.S{i}of{N}.jsonl) to avoid concurrent-write races. load_done()
@@ -86,7 +86,7 @@ def run_one(iid, task_dir):
             return "INCOMPLETE", "make_task failed: " + (mk.stderr or mk.stdout).strip()[-200:]
 
     p = subprocess.run(
-        [PY, str(DRIVER / "flash_pilot.py"), str(task), iid],
+        [PY, str(DRIVER / "flashcomp_pilot.py"), str(task), iid],
         capture_output=True, text=True)
     out = p.stdout + p.stderr
 

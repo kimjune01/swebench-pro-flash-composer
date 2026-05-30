@@ -73,7 +73,7 @@ Verbatim from parent §3:
 `cursor-agent` ships a macOS ARM64 Node binary and darwin-arm64 native modules
 (`file_service.darwin-arm64.node`, `merkle-tree-napi.darwin-arm64.node`).
 Linux x86_64 EC2 is therefore not usable. The run executes as N parallel
-`driver/flash_run.py --shard i/N` processes on the local Mac
+`driver/flashcomp_run.py --shard i/N` processes on the local Mac
 (arm64, 14 vCPU, 48 GB RAM, OrbStack Docker).
 
 **Committed shard count: 4.** Each process handles a 1/4 deterministic stripe
@@ -191,7 +191,7 @@ tags never move.
   digest, `eligible.txt` SHA. EC2 instance type and watchdog TBD at freeze.
 - [x] `runs/audit/run_order.txt` — lexicographic sort of `eligible.txt`,
   committed. 728 lines.
-- [x] Batch driver `driver/flash_run.py` — per-shard ledger, merged resume,
+- [x] Batch driver `driver/flashcomp_run.py` — per-shard ledger, merged resume,
   deterministic stripe, RESULT_JSON parsing, pruning disabled in multi-shard.
   Validated end-to-end on navidrome (phase0.sh, WIN ~180s) and
   element-web (phase0.sh, WIN ~245s).
@@ -215,8 +215,8 @@ Skills (frozen):
   recon/skill.md    SHA-256: 05e7e31592160f75b989617d099150432dfd2e2f94d231386d1f2b6c3f4e1992
   craft/skill.md    SHA-256: 3652a94a0f45051907680ae89ed23d71cfff8d0c82d14e46e4a72b9516d768ad
   audit/skill.md    SHA-256: c0084b835b7cbe1dcfb0ac41d9f339187e5761a870e9c9984c191e70880ab55d
-Harness:            driver/flash_pilot.py  (hash frozen at tag)
-Batch driver:       driver/flash_run.py   (hash frozen at tag)
+Harness:            driver/flashcomp_pilot.py  (hash frozen at tag)
+Batch driver:       driver/flashcomp_run.py   (hash frozen at tag)
 Stage caps:         RECON_CAP=2000s  CRAFT_CAP=3600s  AUDIT_CAP=1200s  MAX_OUTER=5
 Eligible list:      runs/audit/eligible.txt
                     SHA-256: c8c73219600f15a4b3b0317cec1fede476092762c82dde08d73489fb77229370
@@ -224,7 +224,7 @@ Run order:          runs/audit/run_order.txt  (lexicographic sort of eligible.tx
 Grader:             swe_bench_pro_eval.py
                     SHA-256: bb5d4c5486be296e464e695df3747064aaa3bb197394bc6d39980634afec2034
 Execution host:     Mac arm64 (14 vCPU, 48 GB RAM, OrbStack Docker)
-Shard count:        4 parallel flash_run.py processes (--shard 1/4 … 4/4)
+Shard count:        4 parallel flashcomp_run.py processes (--shard 1/4 … 4/4)
 Per-stage caps:     RECON_CAP=2000s  CRAFT_CAP=3600s  AUDIT_CAP=1200s
 ```
 
