@@ -215,8 +215,10 @@ Skills (frozen):
   recon/skill.md    SHA-256: 05e7e31592160f75b989617d099150432dfd2e2f94d231386d1f2b6c3f4e1992
   craft/skill.md    SHA-256: 3652a94a0f45051907680ae89ed23d71cfff8d0c82d14e46e4a72b9516d768ad
   audit/skill.md    SHA-256: c0084b835b7cbe1dcfb0ac41d9f339187e5761a870e9c9984c191e70880ab55d
-Harness:            driver/flashcomp_pilot.py  (hash frozen at tag)
-Batch driver:       driver/flashcomp_run.py   (hash frozen at tag)
+Harness:            driver/flashcomp_pilot.py
+                    SHA-256: bf66d0b527277f8351d4df326e4a8499c08ed3d401cf3dd2c0ce2a1529df6a9c
+Batch driver:       driver/flashcomp_run.py
+                    SHA-256: 2bda56836592c06c3d55f8cb9f36228c86087c70205ff42903b72692d92945dd
 Stage caps:         RECON_CAP=2000s  CRAFT_CAP=3600s  AUDIT_CAP=1200s  MAX_OUTER=5
 Eligible list:      runs/audit/eligible.txt
                     SHA-256: c8c73219600f15a4b3b0317cec1fede476092762c82dde08d73489fb77229370
