@@ -155,7 +155,8 @@ def run_instance(env, iid, ceiling):
         # make_task failure is a platform fault (network, credentials) — treat as box fault
         return None
 
-    child_env = {**os.environ, "REMOTE_BOX": remote_box}
+    sweap = os.environ.get("SWEAP_OS_REPO", "/tmp/swebench-pro-os")
+    child_env = {**os.environ, "REMOTE_BOX": remote_box, "SWEAP_OS_REPO": sweap, "PY": PY}
 
     try:
         r = subprocess.run(
