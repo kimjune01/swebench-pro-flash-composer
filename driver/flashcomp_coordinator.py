@@ -32,6 +32,25 @@ _ledger_lock   = threading.Lock()
 _attempts_lock = threading.Lock()
 _attempts      = {}   # iid -> count
 
+# One-shot rerun bookkeeping: an instance forced back into todo gets exactly one fair
+# re-attempt, then drops off the list regardless of outcome (so a genuinely-unpatchable
+# instance can't be re-forced forever by matching the "unfair" detail pattern).
+_rerun_lock = threading.Lock()
+_forced     = set()
+_rerun_path = None
+
+
+def consume_rerun(iid):
+    """Drop iid from the rerun-list file once it has had its fair re-attempt recorded."""
+    if iid not in _forced:
+        return
+    with _rerun_lock:
+        _forced.discard(iid)
+        if _rerun_path and _rerun_path.exists():
+            kept = [l for l in _rerun_path.read_text().splitlines()
+                    if l.strip() and l.strip() != iid]
+            _rerun_path.write_text("\n".join(kept) + ("\n" if kept else ""))
+
 
 def log(msg):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
@@ -235,6 +254,7 @@ def worker(name, q, max_attempts, ceiling, restart_max, skip_setup=False):
             continue
 
         record(rec)
+        consume_rerun(iid)   # one-shot: this instance got its fair re-attempt
         log(f"  {iid}: {rec['state']} ({rec.get('secs', '?')}s) recorded")
 
     log(f"{name}: queue drained — terminating box")
@@ -260,6 +280,10 @@ def main():
                     help="hard per-instance subprocess timeout (s); RECON_CAP+CRAFT_CAP+AUDIT_CAP")
     ap.add_argument("--ledger",
                     help="ledger path (default runs/scored/run.jsonl)")
+    ap.add_argument("--rerun-list",
+                    help="file of instance_ids to force back into todo, overriding any "
+                         "recorded LOSS (default runs/scored/needs_rerun_no_patch.txt). "
+                         "Used to re-run patchless/crashed records that were never fairly graded.")
     args = ap.parse_args()
 
     global LEDGER
@@ -271,6 +295,31 @@ def main():
 
     elig = pathlib.Path(args.eligible).read_text().split()
     done = load_done()
+    # Force re-run-listed instances back into todo, but ONLY while their latest record is
+    # still "unfair" — a patchless/crashed/ungraded LOSS from a broken-grader window that
+    # never got a fair graded attempt. Self-clearing: once a fresh result (real WIN, or
+    # LOSS carrying official_resolved=True/False) lands, the instance drops off on its own,
+    # so a stale list can't cause endless re-running.
+    UNFAIR = ("no_patch_produced", "harness_exception_before_capture", "official_resolved=None")
+    rerun_path = pathlib.Path(args.rerun_list) if args.rerun_list else (SCORED / "needs_rerun_no_patch.txt")
+    if rerun_path.exists():
+        rerun = set(rerun_path.read_text().split())
+        latest = {}
+        for f in sorted(SCORED.glob("run*.jsonl")):
+            for line in f.read_text().splitlines():
+                try:
+                    r = json.loads(line)
+                    if r["instance_id"] in rerun:
+                        latest[r["instance_id"]] = r.get("detail", "")
+                except Exception:
+                    pass
+        forced = [i for i in rerun if i in done and any(u in latest.get(i, "") for u in UNFAIR)]
+        for i in forced:
+            done.pop(i, None)
+        global _forced, _rerun_path
+        _forced = set(forced)
+        _rerun_path = rerun_path
+        log(f"rerun-list {rerun_path.name}: {len(forced)} unfair records forced back into todo")
     todo = [i for i in elig if i not in done]
     log(f"eligible={len(elig)}  done={len(done)}  todo={len(todo)}  boxes={args.boxes}")
     if not todo:

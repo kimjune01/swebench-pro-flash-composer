@@ -20,3 +20,49 @@ Freeze tag `prereg-flash-v1` cut at this commit (see §8 of PREREGISTRATION.md).
 - `instance_ansible__ansible-0fd88717…` — WIN (289s, multi-shard validation, shard 2/2)
 
 **Next:** measurement run — 4 shards × 182 instances on Mac arm64.
+
+## 2026-05-31 — EC2 measurement run: outage recovery + grading moved on-box
+
+Long recovery session on the §4.5a EC2 coordinator run. Root-caused a cascade of
+failures, recovered the ledger without re-running agents, and hardened the harness.
+
+**Incident chain (all distinct, surfaced in sequence):**
+1. **Mac disk full → OrbStack down.** `official_grade()` ran *locally* on the Mac
+   (`--use_local_docker`), so with Docker down every grade returned `None`. The
+   coordinator recorded `None` as LOSS → **131 agent-solved instances mis-scored as
+   losses** and frozen in the ledger (resolve rate cratered 87.8% → 33.9%, an artifact).
+2. **Re-cloned grader repo missing `docker` SDK** (Xcode python) — silent second cause.
+3. **OrbStack flapped again** mid-recovery — confirmed Mac Docker is too fragile to grade on.
+4. **Mac public IP changed** — SG ingress is locked to provision-time IP; chased as a lead,
+   was secondary.
+5. **Root of the fleet death: 3h self-terminate watchdog.** `provision_box.sh` set
+   `shutdown -h +180` + terminate-on-shutdown. Run outlived its own kill timer (extended by
+   hours of debugging) → 17/19 boxes self-terminated mid-run. Coordinator then churned
+   INCOMPLETEs (SSH-dead boxes requeue, don't reprovision), so it was stopped.
+
+**Recovery (no agent re-runs):**
+- Freed disk; OrbStack restart reclaimed ballooned virtual disk (15G → 110G).
+- All 131 patches were persisted (`runs/dev/fc_pred_*`), so re-graded from disk:
+  **119 were real WINs, 12 real LOSSes.** First on Mac (flapped), then pivoted to the boxes.
+
+**Hardening (committed to harness):**
+- `official_grade()` now grades **on the EC2 box** (its own docker + cached images) when
+  `REMOTE_BOX` is set; Mac-local path kept as fallback. A Mac Docker outage can no longer
+  turn wins into losses. Validated end-to-end + live (first on-box WIN: flipt-9d25c18b, 604s).
+- `provision_box.sh`: installs the grader (repo + `docker/pandas/tqdm`) so reprovisioned
+  boxes are grade-ready; watchdog `180 → 720` min (`WATCHDOG_MIN`), verified live on-box.
+- `driver/regrade_on_boxes.py` — distributes captured patches across the fleet to re-grade.
+- Coordinator gains a **one-shot rerun-list** (`runs/scored/needs_rerun_no_patch.txt`):
+  forces patchless/crashed/None records back into `todo` only while still "unfair", then
+  prunes on record (a genuinely-unpatchable instance can't be re-forced forever).
+
+**Loss taxonomy (the 11+ patchless "losses"):** not real losses — `no_patch_produced` /
+`harness_exception` / `None` from the broken window, queued for one fair re-attempt. On the
+healthy fresh fleet most re-ran to genuine `no_patch_produced` (agent truly emits no patch).
+
+**State at log time:** fresh 19-box fleet (provisioned ~18:41, 12h watchdog), on-box grading,
+0 box faults. Ledger: **203 WIN / 61 LOSS / 264 graded, 464 todo.** OPEN WATCH — fresh-run
+win rate currently depressed; front of `run_order` is lexicographically loaded with harder
+ansible/element-web/flipt instances (incl. malformed `*-vnan`). Monitoring whether it
+recovers toward the ~87% banked rate as the queue clears the hard front. Grading is clean
+(0 `None` regressions on the fresh fleet).

@@ -7,3 +7,8 @@
 # run-time scratch
 runs/scratch/
 /tmp-*/
+runs/dev/
+runs/logs/
+runs/scored/*.log
+runs/scored/*.bak-*
+runs/scored/*.smoketest.jsonl.bak

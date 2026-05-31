@@ -32,9 +32,12 @@ IP=$(aws ec2 describe-instances --instance-ids $IID \
 printf "KEY=%s\nPUBIP=%s\nIID=%s\nSG=%s\nREGION=%s\n" "$KEY" "$IP" "$IID" "$SG" "$REGION" > $ENVF
 ssh_cmd() { ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i $PEM ec2-user@$IP "$@"; }
 for i in $(seq 40); do ssh_cmd "echo up" 2>/dev/null && break || sleep 5; done
-ssh_cmd "sudo shutdown -h +180 || true; \
+ssh_cmd "sudo shutdown -h +${WATCHDOG_MIN:-720} || true; \
          sudo dnf install -y -q docker git python3.11 python3.11-pip nodejs npm 2>/dev/null; \
          sudo systemctl enable --now docker 2>/dev/null; \
          sudo usermod -aG docker ec2-user; \
+         git clone --depth 1 https://github.com/scaleapi/SWE-bench_Pro-os.git ~/swebench-pro-os 2>/dev/null; \
+         python3 -m ensurepip --user 2>/dev/null; \
+         python3 -m pip install --user --quiet docker pandas tqdm 2>/dev/null; \
          echo BOOTSTRAPPED $NAME" >/dev/null 2>&1
 echo "READY $NAME $IP"
