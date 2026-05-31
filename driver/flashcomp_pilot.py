@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """flashcomp_pilot.py — per-instance pilot: Cursor Composer 2.5 (recon+craft) + Gemini 2.5 Flash (adversary+audit).
 
-Replicates the swebench-pro inquiry loop with a cheaper cross-family model pair
+Replicates the swebench-pro methodeutic harness with a cheaper cross-family model pair
 (Composer × Flash instead of Sonnet × GPT-5.5). Same skill contracts, same outer-loop
 structure, same gate routing — different models. This is §4.5a of the paper.
 
@@ -657,7 +657,7 @@ def main():
         failbase = run(f"bash {gate}", timeout=1800).stdout
         (HERE / f"fc_failbase_{tag}.txt").write_text(failbase)
 
-        # ── Outer inquiry loop (mirrors parent MAX_OUTER=5) ───────────────────────
+        # ── Outer methodeutic loop (mirrors parent MAX_OUTER=5) ───────────────────
         # hgraph accumulates killed/witnessed hypotheses across re-entries so recon
         # never re-proposes already-disproven root causes.
         hgraph = ""

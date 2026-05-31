@@ -1,6 +1,7 @@
 # swebench-pro-flash-composer
 
-The inquiry-loop harness on **SWE-bench Pro**, dispatched against **Cursor's Composer 2.5** (craft) +
+The **methodeutic harness** (recon → craft → audit: abduction → deduction → induction made
+executable) on **SWE-bench Pro**, dispatched against **Cursor's Composer 2.5** (craft) +
 **Gemini 2.5 Flash** (audit). Sibling to [`swebench-pro`](https://github.com/kimjune01/swebench-pro)
 (Sonnet 4.5 + GPT-5.5 codex) — one repo per *number*, one number per *model pair*.
 
