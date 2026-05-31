@@ -144,3 +144,27 @@ At this log time (#4 re-run still converting parked INCOMPLETEs):
 
 Skeptical WIN re-grade (#3) stands: 60/60 sampled WINs reproduce on a clean grader (0 flips),
 so the WINs in the numerator are real grader passes (reproducibility, not coverage).
+
+## 2026-05-31 (cont. 4) - prereg correction to the denominator framing
+
+cont. 3 overcorrected. Per PREREGISTRATION.md §5/§6 the split is:
+
+- **Denominator = 728, never shrinks.** INCOMPLETEs are PENDING toward 728, not excluded
+  and NOT counted as solver losses (§6).
+- **INCOMPLETE = enumerated EXTERNAL fault only** (`BOX_DEATH/DISK_FULL/OOM/SETUP_NETWORK_FAIL/
+  PROVIDER_CRED_REJECT`), coordinator-detected -> retry under byte-identical artifact (§5).
+  Our two disk crashes are DISK_FULL infra: retried, NOT charged to the agent.
+- **0-byte capture / agent-emitted-no-patch = LOSS, stands** (§5 table). Solver incompetence
+  counts; infra incompetence retries. Headline = resolved / 728.
+
+**Compliance gap found:** the `no_patch_produced -> INCOMPLETE` reclassification committed
+earlier (701006b) DEVIATES from the frozen table (§5: 0-byte capture = LOSS; §5: "No
+INCOMPLETE reclassification"). Correct behavior is a split:
+  - setup-fault / DISK_FULL / crash-before-capture -> INCOMPLETE (infra, retry)
+  - agent ran the loop and emitted nothing (0-byte capture) -> LOSS (stands)
+The 2 remaining ansible no-patches (5 iters, NOT_RESOLVED) are 0-byte-capture LOSSes, not
+INCOMPLETE. Fix the classify block post-#4 (not mid-run); score those 2 as LOSS in the final.
+
+**Honest in-progress headline:** resolved / 728 = 621 / 728 = 85.3% (LOWER bound; the
+DISK_FULL-infra INCOMPLETEs are still being retried up by #4). Final on #4 DONE.
+Parent codex: 694/728 = 95.3%.
