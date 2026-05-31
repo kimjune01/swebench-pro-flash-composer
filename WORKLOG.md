@@ -99,3 +99,26 @@ the $200 Cursor plan. All EC2 boxes terminated (incl. 5 post-run idle/orphan).
 - Skeptical re-grade of the 559 WINs from persisted `fc_pred`/`fc_sample` (same grader →
   catches only flaky/nondeterministic false-WINs; deterministic coverage gaps need UTBoost).
 - Re-run the 117 INCOMPLETE + 6 untouched now that image reclamation prevents the disk death.
+
+## 2026-05-31 (cont. 2) - validation: WIN re-grade + INCOMPLETE re-run
+
+Two post-run validation passes after the fixes landed.
+
+**#3, skeptical WIN re-grade (sample).** Re-graded a 60-WIN stratified sample (across all
+11 repos) from persisted `fc_pred`/`fc_sample` on a fresh 5-box `wincheck` fleet, recording
+to a separate ledger (`runs/scored/regrade_win.jsonl`); original `run.jsonl` untouched.
+Result: **60/60 reproduced WIN, 0 flips.** The 92% is not a grader-flake, serialization, or
+operator-mitigation artifact: every sampled WIN reproduces on a clean independent grader.
+Boundary: this validates *reproducibility*, NOT *test-coverage* (a weak F2P set still passes
+a wrong patch deterministically; that needs the UTBoost stronger tests, a separate axis).
+Did not escalate to all 559: same-grader re-grade is deterministic, so 0/60 implies ~0 on
+the rest. Script: `driver/regrade_wins.py`.
+
+**#4, re-run the 114 unfinished (in progress at log time).** Coordinator re-run (15 fresh
+boxes) of the INCOMPLETE + untouched, using the image-reclaim-fixed pilot. Validates the
+fix end-to-end: **setup_failed=0** (boxes no longer fill), and the disk-killed instances are
+converting INCOMPLETE to graded. At log time: 624 graded (578W/46L, 92.6%), 98 INCOMPLETE
+remaining, conversions running WIN-heavy (expected: these were setup failures on large
+repos, not capability losses). Fleet teardown + final tally to follow on DONE.
+
+**Cost note:** wincheck fleet (5 boxes) terminated post-#3; #4's 15 boxes still up.
