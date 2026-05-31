@@ -66,3 +66,36 @@ win rate currently depressed; front of `run_order` is lexicographically loaded w
 ansible/element-web/flipt instances (incl. malformed `*-vnan`). Monitoring whether it
 recovers toward the ~87% banked rate as the queue clears the hard front. Grading is clean
 (0 `None` regressions on the fresh fleet).
+
+## 2026-05-31 (cont.) — run complete; disk root-cause; capture + reclaim fixes
+
+The OPEN WATCH above resolved: win rate recovered as the hard lexicographic front
+cleared. A second local-disk-full crash (`OSError: No space left`, 19:14) killed the
+coordinator mid-run; freed disk (OrbStack 102G→16G after pruning 81 `jefzda` images)
+and resumed `--boxes 19 --skip-setup`.
+
+**Final ledger:** **559 WIN / 46 LOSS / 117 INCOMPLETE / 6 untouched** (728 eligible) —
+**92.4%** over 605 graded. INCOMPLETE is non-terminal, so it does not deflate the rate.
+
+**Root cause of both disk events (one bug):** no `docker rmi`/prune anywhere. `pro_setup`
+pulls a unique multi-GB image per instance; nothing reclaims it. Local runs filled OrbStack
+(→ the 19:14 crash); the resumed `REMOTE_BOX` run filled box disks on the large-repo tail
+(protonmail/qutebrowser/tutanota) → `docker pull` fails in ~3s → the 117 `setup failed`
+INCOMPLETEs. Registry manifests for those images were verified PRESENT — it was disk, not
+missing tags (an earlier "missing image" guess, refuted).
+
+**Fixes shipped this session:**
+- `pilot: reclaim image on teardown` (`docker rm -f` + `rmi -f`, routed via `run()` so it
+  guards both local and box) — the actual fix for both disk events.
+- `capture: stage untracked files before diff` — `git add -A; git diff --cached HEAD`
+  (mirrors parent `pro_pilot.py`); bare `git diff HEAD` was dropping new-file fixes to
+  `no_patch`. Reclassified empty-patch LOSS→INCOMPLETE. Test: `driver/test_capture_untracked.py`.
+- `docs/cost.md` — full-run cost (~$50–65 cash; ~$160 economic; open-weight piggybacking).
+
+**Cost:** Gemini $23.18 (month) + Cursor on-demand $26.61 + EC2 ~$14 ≈ $50–65 cash on top of
+the $200 Cursor plan. All EC2 boxes terminated (incl. 5 post-run idle/orphan).
+
+**Still open (need a fresh fleet — not yet run):**
+- Skeptical re-grade of the 559 WINs from persisted `fc_pred`/`fc_sample` (same grader →
+  catches only flaky/nondeterministic false-WINs; deterministic coverage gaps need UTBoost).
+- Re-run the 117 INCOMPLETE + 6 untouched now that image reclamation prevents the disk death.
