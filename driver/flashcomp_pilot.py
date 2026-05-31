@@ -704,7 +704,14 @@ def main():
         crashed = True
         log({"instance": iid, "stage": "crash", "msg": str(exc)})
     finally:
-        run(f"docker kill {cid} 2>/dev/null")
+        # Reclaim disk: remove the container AND its (multi-GB, single-use) image.
+        # Each instance has a unique jefzda/sweap-images tag that is never reused, so
+        # without this they accumulate until the docker host runs out of space — which
+        # crashed the local Mac (OrbStack → 102G) and stalled the box tail (large-repo
+        # images filling box disk → 3s setup failures). Routes to whichever host run()
+        # targets (local or REMOTE_BOX), so it guards both paths.
+        run(f"docker rm -f {cid} 2>/dev/null", timeout=120)
+        run(f"docker rmi -f {inst['image_name']} 2>/dev/null", timeout=180)
 
     # Grade + classify. LOSS is reserved for a REAL graded failure: a patch was produced
     # AND the grader returned False. Everything else that never earned a fair graded
