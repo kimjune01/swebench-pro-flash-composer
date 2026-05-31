@@ -123,6 +123,26 @@ No re-roll, no INCOMPLETE reclassification.
 
 **No instance may be reclassified by discretion after its logs are visible.**
 
+**Who decides (no drift between pilot and coordinator):**
+- The **pilot** emits only `WIN` / `LOSS` / `INCOMPLETE(grader-None)`. It NEVER declares an
+  external fault. An empty patch (0-byte capture) and any exception raised inside our
+  scaffold are *endogenous to the method* and record as `LOSS`. A grader that returns
+  `None` (could not produce a verdict, e.g. a Docker outage) records `INCOMPLETE`.
+- The **coordinator** is the sole authority for external-fault `INCOMPLETE`
+  (`BOX_DEATH` / `DISK_FULL` / `OOM` / `SETUP_NETWORK_FAIL` / `PROVIDER_CRED_REJECT`). It
+  detects them across instances (SSH-dead box; the 4-invariant cred-reject test) and
+  requeues under the byte-identical artifact. The pilot's `setup failed` (cannot pull/run
+  the image) is the one infra signal it may surface, treated as `DISK_FULL`/`NETWORK`.
+
+**Why a billing/quota error is still a LOSS unless all four invariants hold:** from inside
+a single instance, a lone provider blip is indistinguishable from the agent simply failing.
+Auto-retrying on any API error would be optional-stopping leakage through the back door
+(retry until it passes). So the bar is deliberately high and *systematic*: >=3 consecutive
+on one box AND resolved by a fresh credential push, coordinator-confirmed. A **harness
+exception is our scaffold breaking** — that is our fault and stands as a `LOSS`, never
+excused as "infra." Solver incompetence and our scaffold bugs both count; only confirmed
+external outages retry.
+
 ---
 
 ## 5. Stopping rule (inherited)

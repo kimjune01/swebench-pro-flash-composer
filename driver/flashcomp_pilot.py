@@ -713,27 +713,34 @@ def main():
         run(f"docker rm -f {cid} 2>/dev/null", timeout=120)
         run(f"docker rmi -f {inst['image_name']} 2>/dev/null", timeout=180)
 
-    # Grade + classify. LOSS is reserved for a REAL graded failure: a patch was produced
-    # AND the grader returned False. Everything else that never earned a fair graded
-    # result is INCOMPLETE (retryable, recorded non-terminal so it stays runnable instead
-    # of inflating the loss count). The coordinator bounds retries at --max-attempts.
-    #   - no patch / empty diff  → the agent didn't launch (quota, broken pipe, infra)
-    #   - pre-capture crash      → infra, not a capability failure
-    #   - grader returned None   → ungraded, not a verdict
+    # Grade + classify — maps 1:1 to PREREGISTRATION.md sec.4 scoring table.
+    # The system under test is the solver; only EXTERNAL infra faults are retryable.
+    #   - patch + grader True/False → WIN / LOSS (stands)
+    #   - patch + grader None       → INCOMPLETE: grader could not produce a verdict
+    #     (docker/grader infra, e.g. the local-Docker outage) → retry, don't bank a loss
+    #   - 0-byte capture (loop ran, agent emitted no patch) -> LOSS, stands (sec.4)
+    #   - harness exception before capture                  -> LOSS, stands (sec.4)
+    # (DISK_FULL/BOX_DEATH/OOM/network/cred = INCOMPLETE, but those are detected upstream:
+    #  pro_setup setup-failure, or coordinator SSH-fault → requeue. Not reached here.)
     if src.strip():
         resolved = official_grade(inst, src)
         detail   = f"official_resolved={resolved} agent_verdict={verdict}"
         state    = ("WIN"  if resolved is True
                     else "LOSS" if resolved is False
-                    else "INCOMPLETE")          # None = ungraded → retry, don't bank a loss
+                    else "INCOMPLETE")          # None = grader infra → retry, don't bank a loss
     elif crashed:
+        # harness exception in our scaffold = OUR fault, endogenous → LOSS, stands (sec.4).
+        # A genuine external provider outage (PROVIDER_CRED_REJECT) is NOT decided here —
+        # the coordinator owns that, gated on all 4 invariants (>=3 consecutive same-box +
+        # cred-push-resolved); a lone API blip stays a LOSS by design.
         resolved = None
-        detail   = f"INCOMPLETE:harness_exception_before_capture agent_verdict={verdict}"
-        state    = "INCOMPLETE"
+        detail   = f"LOSS:harness_exception_before_capture agent_verdict={verdict}"
+        state    = "LOSS"
     else:
+        # 0-byte capture: loop completed, agent emitted no patch → LOSS, stands (sec.4)
         resolved = None
-        detail   = f"INCOMPLETE:no_patch_produced agent_verdict={verdict}"
-        state    = "INCOMPLETE"
+        detail   = f"LOSS:no_patch_produced agent_verdict={verdict}"
+        state    = "LOSS"
     ended_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     rec = {
         "instance_id": iid,
