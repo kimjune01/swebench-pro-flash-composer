@@ -454,11 +454,17 @@ def capture_patch(inst, cid, root):
         r"find . -path ./.git -prune -o -type d \( -name __pycache__ -o -name "
         r".pytest_cache -o -name result_images -o -name '*.egg-info' \) "
         r"-exec rm -rf {} + >/dev/null 2>&1; "
+        # Stage everything (incl. untracked new files) so `git diff --cached HEAD`
+        # captures composer fixes that create new files. Bare `git diff HEAD` omits
+        # untracked files → real fixes silently dropped to no_patch. Mirrors the parent
+        # harness (pro_pilot.py). Detritus is already swept above; test files are stripped
+        # post-hoc by _strip_test_blocks, so over-staging here is harmless.
+        r"git add -A -- . >/dev/null 2>&1; "
         f"echo OK'", timeout=120)
-    diff = run(f"docker exec {cid} bash -c 'cd {root} && git diff HEAD'",
+    diff = run(f"docker exec {cid} bash -c 'cd {root} && git diff --cached HEAD'",
                timeout=120).stdout
     # Use --name-only for the file list: authoritative, handles renames, no parse fragility
-    names_raw = run(f"docker exec {cid} bash -c 'cd {root} && git diff --name-only HEAD'",
+    names_raw = run(f"docker exec {cid} bash -c 'cd {root} && git diff --cached --name-only HEAD'",
                     timeout=30).stdout.strip().splitlines()
     gold_testpaths = {l[6:] for l in inst.get("test_patch", "").splitlines()
                       if l.startswith("+++ b/")}
@@ -484,12 +490,36 @@ def _log_grader_kill(iid, reason, cid=None):
     log({"instance": iid, "stage": "grade_kill", **rec})
 
 
+def _parse_eval_val(val):
+    """Schema varies: bare bool ({iid: True}) or nested dict ({iid: {"resolved": True}})."""
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, dict):
+        return val.get("resolved")
+    return None
+
+
+def _scp_to_box(local_path, remote_path):
+    """Copy a local file to the EC2 box (only valid on the REMOTE_BOX path)."""
+    subprocess.run(
+        ["scp", "-i", _SSH_PEM, "-o", "StrictHostKeyChecking=no",
+         "-o", "ConnectTimeout=15", str(local_path), f"{_SSH_HOST}:{remote_path}"],
+        check=True, capture_output=True, text=True, timeout=180)
+
+
 def official_grade(inst, src):
+    """Grade a patch with the official harness.
+
+    Grading is colocated with the agent's docker host: when REMOTE_BOX is set the
+    grader runs ON the EC2 box (against the box's daemon + cached images), so a Mac
+    Docker outage can never again turn a win into a None/LOSS.  Falls back to local
+    grading (SWEAP_OS_REPO + Mac Docker) only when there is no remote box.
+    """
     repo = os.environ.get("SWEAP_OS_REPO", "")
     iid  = inst["instance_id"]
-    if not repo:
+    if not _SSH_HOST and not repo:
         log({"instance": iid, "stage": "grade",
-             "msg": "SWEAP_OS_REPO not set — source sibling .proenv; skipping grade"})
+             "msg": "no REMOTE_BOX and no SWEAP_OS_REPO — skipping grade"})
         return None
     tag  = iid.replace("/", "_")
     try:
@@ -504,6 +534,46 @@ def official_grade(inst, src):
     row["selected_test_files_to_run"] = json.dumps(inst["selected_test_files"])
     pd.DataFrame([row]).to_json(samp, orient="records", lines=True)
     json.dump([{"instance_id": iid, "patch": src, "prefix": ""}], open(pred, "w"))
+
+    if _SSH_HOST:
+        return _official_grade_remote(iid, tag, samp, pred)
+    return _official_grade_local(iid, tag, samp, pred, repo)
+
+
+def _official_grade_remote(iid, tag, samp, pred):
+    """Ship sample+patch to the box and grade against its docker daemon."""
+    dhub = os.environ.get("DOCKERHUB_USER", "jefzda")
+    rdir = f"/tmp/fcgrade_{tag}"
+    try:
+        run(f"mkdir -p {rdir}/out", timeout=60)
+        _scp_to_box(samp, f"{rdir}/sample.jsonl")
+        _scp_to_box(pred, f"{rdir}/pred.json")
+    except Exception as exc:
+        log({"instance": iid, "stage": "grade", "msg": f"remote grade ship failed: {exc}"})
+        return None
+    cmd = (f"cd ~/swebench-pro-os && python3 swe_bench_pro_eval.py "
+           f"--raw_sample_path {rdir}/sample.jsonl --patch_path {rdir}/pred.json "
+           f"--output_dir {rdir}/out --scripts_dir run_scripts --num_workers 1 "
+           f"--use_local_docker --dockerhub_username {dhub} --redo")
+    try:
+        run(cmd, timeout=GRADER_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        # Reap grader containers the box left behind, log the kill, surface None.
+        run(f"docker ps --filter label=instance_id={iid} -q | xargs -r docker kill", timeout=120)
+        _log_grader_kill(iid, "GRADER_TIMEOUT_REMOTE")
+        return None
+    r = run(f"cat {rdir}/out/eval_results.json 2>/dev/null", timeout=60)
+    run(f"rm -rf {rdir}", timeout=60)
+    if not (r.stdout or "").strip():
+        return None
+    try:
+        return _parse_eval_val(json.loads(r.stdout).get(iid))
+    except Exception:
+        return None
+
+
+def _official_grade_local(iid, tag, samp, pred, repo):
+    """Grade against the Mac's docker daemon (fallback when no REMOTE_BOX)."""
     out_dir = HERE / f"fc_grade_{tag}"
     py = os.environ.get("PY", sys.executable)
     try:
@@ -528,13 +598,7 @@ def official_grade(inst, src):
     res = out_dir / "eval_results.json"
     if not res.exists():
         return None
-    val = json.load(open(res)).get(iid)
-    # Schema varies: bare bool ({iid: True}) or nested dict ({iid: {"resolved": True}})
-    if isinstance(val, bool):
-        return val
-    if isinstance(val, dict):
-        return val.get("resolved")
-    return None
+    return _parse_eval_val(json.load(open(res)).get(iid))
 
 
 # ── main ──────────────────────────────────────────────────────────────────────
@@ -642,24 +706,27 @@ def main():
     finally:
         run(f"docker kill {cid} 2>/dev/null")
 
-    # Official grade (needs SWEAP_OS_REPO from sibling .proenv)
+    # Grade + classify. LOSS is reserved for a REAL graded failure: a patch was produced
+    # AND the grader returned False. Everything else that never earned a fair graded
+    # result is INCOMPLETE (retryable, recorded non-terminal so it stays runnable instead
+    # of inflating the loss count). The coordinator bounds retries at --max-attempts.
+    #   - no patch / empty diff  → the agent didn't launch (quota, broken pipe, infra)
+    #   - pre-capture crash      → infra, not a capability failure
+    #   - grader returned None   → ungraded, not a verdict
     if src.strip():
         resolved = official_grade(inst, src)
-        detail = f"official_resolved={resolved} agent_verdict={verdict}"
+        detail   = f"official_resolved={resolved} agent_verdict={verdict}"
+        state    = ("WIN"  if resolved is True
+                    else "LOSS" if resolved is False
+                    else "INCOMPLETE")          # None = ungraded → retry, don't bank a loss
     elif crashed:
-        # Harness exception before capture — endogenous to the method, stands as LOSS.
-        # Only enumerated external faults (BOX_DEATH, OOM, PROVIDER_CRED_REJECT) earn
-        # INCOMPLETE; those are detected and logged by the coordinator, not here.
         resolved = None
-        detail = f"LOSS:harness_exception_before_capture agent_verdict={verdict}"
+        detail   = f"INCOMPLETE:harness_exception_before_capture agent_verdict={verdict}"
+        state    = "INCOMPLETE"
     else:
-        # Loop ran to completion but produced no patch — capability failure, stands as LOSS.
         resolved = None
-        detail = f"LOSS:no_patch_produced agent_verdict={verdict}"
-
-    state    = ("WIN"  if resolved is True
-                else "LOSS"  if resolved is False or resolved is None
-                else "INCOMPLETE")
+        detail   = f"INCOMPLETE:no_patch_produced agent_verdict={verdict}"
+        state    = "INCOMPLETE"
     ended_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     rec = {
         "instance_id": iid,
