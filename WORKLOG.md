@@ -122,3 +122,25 @@ remaining, conversions running WIN-heavy (expected: these were setup failures on
 repos, not capability losses). Fleet teardown + final tally to follow on DONE.
 
 **Cost note:** wincheck fleet (5 boxes) terminated post-#3; #4's 15 boxes still up.
+
+## 2026-05-31 (cont. 3) - scoring convention: incompetence stays in the denominator
+
+Correction to the framing in the entries above (which led with "X over N graded").
+That graded-only rate SHRINKS the denominator by parking our own failures as INCOMPLETE,
+which is denominator-shopping. The honest headline counts every eligible instance:
+
+  **HEADLINE = WIN / 728** (same denominator as the parent swebench-pro run).
+
+Everything that is not a WIN counts as non-resolved: LOSS, INCOMPLETE (including setup
+failures from our local/box disk mismanagement AND genuine no-patch capability misses),
+and untouched. Our incompetence (the two disk crashes, the missing image-prune, the
+capture bug, the agent emitting no patch) does NOT get excluded from the score.
+
+At this log time (#4 re-run still converting parked INCOMPLETEs):
+- **Headline: 615 / 728 = 84.5%** (rising; final number on #4 DONE).
+- Graded-only 615/661 = 93.0% is a DIAGNOSTIC ONLY, not the headline.
+- Parent codex: 694 / 728 = 95.3%. Real gap ~11 pts (codex is the stronger solver and never
+  bled instances to disk/no-patch).
+
+Skeptical WIN re-grade (#3) stands: 60/60 sampled WINs reproduce on a clean grader (0 flips),
+so the WINs in the numerator are real grader passes (reproducibility, not coverage).
