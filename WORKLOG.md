@@ -168,3 +168,36 @@ INCOMPLETE. Fix the classify block post-#4 (not mid-run); score those 2 as LOSS 
 **Honest in-progress headline:** resolved / 728 = 621 / 728 = 85.3% (LOWER bound; the
 DISK_FULL-infra INCOMPLETEs are still being retried up by #4). Final on #4 DONE.
 Parent codex: 694/728 = 95.3%.
+
+## 2026-05-31 (cont. 5) - FINAL locked
+
+#4 re-run DONE. Merging all scored-run shards (run*.jsonl, the load_done view):
+
+  **HEADLINE: resolved / 728 = 678 / 728 = 93.1%** (prereg-honest).
+
+- WIN (resolved): 678
+- LOSS: 49 (47 graded + 2 ansible no-patch scored as 0-byte-capture LOSS per PREREG sec.5)
+- Pending (infra, re-runnable per sec.6): 1 (ansible-c1f2, `setup failed` DISK_FULL, exhausted
+  --max-attempts; not charged as a loss)
+- untouched: 0
+
+Validation that backs the number:
+- Skeptical WIN re-grade (#3): 60/60 sampled WINs reproduced on a clean independent grader,
+  0 flips. WINs are real, reproducible grader passes.
+- Reclaim fix held: setup_failed=0 across the entire #4 re-run (boxes never re-filled).
+- #4 recovered ~119 instances (559 -> 678 WIN) that the disk bug had killed as INCOMPLETE,
+  confirming they were genuinely solvable work lost to our infra, not capability failures.
+- Full 728 denominator, nothing excluded; infra retried per prereg, 0-byte capture = LOSS.
+
+Comparison: parent codex 694/728 = 95.3%. Flash+composer 678/728 = 93.1%, ~2.2 pts back.
+
+Boundary (unchanged): this is reproducibility-validated, NOT coverage-validated. A weak F2P
+set still passes a wrong patch deterministically; the coverage axis needs UTBoost stronger
+tests, a separate run not done here.
+
+Tooling notes for next time:
+- `score-pro` reads only `run.jsonl`, not the `run.S*of*.jsonl` shards, so it UNDERCOUNTS a
+  sharded run (showed 672, true merged = 678). Use the merged/load_done view for the headline.
+- Pending code fix (post-run, prereg compliance): split the empty-patch classify - infra
+  fault -> INCOMPLETE, agent-emitted-nothing (0-byte capture) -> LOSS. The blanket
+  no_patch->INCOMPLETE committed in 701006b deviates from sec.5 and must be reverted/split.
