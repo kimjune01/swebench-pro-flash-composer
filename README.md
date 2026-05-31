@@ -1,7 +1,7 @@
 # swebench-pro-flash-composer
 
 The inquiry-loop harness on **SWE-bench Pro**, dispatched against **Cursor's Composer 2.5** (craft) +
-**Gemini 3.5 Flash** (audit). Sibling to [`swebench-pro`](https://github.com/kimjune01/swebench-pro)
+**Gemini 2.5 Flash** (audit). Sibling to [`swebench-pro`](https://github.com/kimjune01/swebench-pro)
 (Sonnet 4.5 + GPT-5.5 codex) — one repo per *number*, one number per *model pair*.
 
 **Purpose:** §4.5a cheap-ablation companion to the inquiry-loop paper
@@ -68,9 +68,24 @@ docs/
 
 Dual: GPL-3.0 (code) OR CC BY-SA-NS (prose), recipient's choice. See [`LICENSE.md`](LICENSE.md).
 
+## Writeup
+
+The full writeup, methodology, and cross-pair comparison live in the parent
+**[`swebench-pro`](https://github.com/kimjune01/swebench-pro)** repo (the canonical home for
+the inquiry-loop paper and both model-pair runs). This repo is the experimental apparatus and
+per-instance ledger for the Composer 2.5 + Flash pair; read it alongside the parent's writeup.
+
+- Methodology + paper: [`swebench-pro`](https://github.com/kimjune01/swebench-pro)
+- This run's scoring rules: [`PREREGISTRATION.md`](PREREGISTRATION.md) (sec.4 scoring table, sec.6 denominator)
+- This run's narrative + incidents: [`WORKLOG.md`](WORKLOG.md)
+
 ## Status
 
-**Phase 0 not yet run.** Repo scaffolded; awaiting API keys + go-ahead to provision the first box.
+**Scored run complete (2026-05-31).** Final: **678 / 728 = 93.1%** resolved (prereg-honest,
+full 728 denominator; infra retried per sec.6, 0-byte capture counted as LOSS per sec.4).
+Independently reproduced: a stratified 60-WIN re-grade on a clean grader reproduced 60/60, 0 flips.
+Parent codex pair (Sonnet 4.5 + GPT-5.5): 694 / 728 = 95.3%, so this cheaper pair lands ~2.2 pts back.
 
-See [`swebench-pro/WORKLOG.md`](https://github.com/kimjune01/swebench-pro/blob/main/WORKLOG.md)
-"2026-05-29" entries for the main run's current status (96.7% on 424/728 graded).
+Caveat: this is reproducibility-validated, not test-coverage-validated (a weak F2P set still
+passes a wrong patch; the UTBoost stronger-tests axis is a separate run). See [`WORKLOG.md`](WORKLOG.md)
+for the full arc, and [`swebench-pro`](https://github.com/kimjune01/swebench-pro) for the writeup.
